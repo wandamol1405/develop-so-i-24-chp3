@@ -1,6 +1,0 @@
-/home/wanda/so-i-24-chp3-wandamol1405/build/CMakeFiles/main.dir
-/home/wanda/so-i-24-chp3-wandamol1405/build/CMakeFiles/edit_cache.dir
-/home/wanda/so-i-24-chp3-wandamol1405/build/CMakeFiles/rebuild_cache.dir
-/home/wanda/so-i-24-chp3-wandamol1405/build/lib/memory/CMakeFiles/memory.dir
-/home/wanda/so-i-24-chp3-wandamol1405/build/lib/memory/CMakeFiles/edit_cache.dir
-/home/wanda/so-i-24-chp3-wandamol1405/build/lib/memory/CMakeFiles/rebuild_cache.dir

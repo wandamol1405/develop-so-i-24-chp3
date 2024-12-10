@@ -1,5 +1,0 @@
-[2024-12-10 11:07:31] Operation: malloc, Address: 0x78960af00028, Size: 100 bytes
-[2024-12-10 11:07:31] Operation: calloc, Address: 0x78960aeff028, Size: 40 bytes
-[2024-12-10 11:07:31] Operation: realloc, Address: 0x78960aefe028, Size: 200 bytes
-[2024-12-10 11:07:31] Operation: free, Address: 0x78960aefe028, Size: 0 bytes
-[2024-12-10 11:07:31] Operation: free, Address: 0x78960aeff028, Size: 0 bytes
