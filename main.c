@@ -4,7 +4,7 @@
 
 int main() {
   // Abrir el archivo de log
-  open_log_file("memory_operations.log");
+  open_log_file();
   malloc_control(FIRST_FIT);
 
   // Ejemplo de uso

@@ -1,10 +1,12 @@
 #include "memory.h"
+#include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <time.h>
 
 typedef struct s_block *t_block;
+typedef struct memory_stats memory_stats;
 void *base = NULL;
 int method = 0;
 FILE *log_file = NULL;
@@ -41,7 +43,7 @@ t_block find_block(t_block *last, size_t size) {
     }
 
     return (b);
-  } else {
+  } else if (method == BEST_FIT) {
     size_t dif = PAGESIZE;
     t_block best = NULL;
 
@@ -59,6 +61,27 @@ t_block find_block(t_block *last, size_t size) {
       b = b->next;
     }
     return best;
+  } else if (method == WORST_FIT) {
+    size_t dif = 0;
+    t_block worst = NULL;
+
+    while (b) {
+      if (b->free) {
+        if (b->size == size) {
+          return b;
+        }
+        if (b->size > size && (b->size - size) > dif) {
+          dif = b->size - size;
+          worst = b;
+        }
+      }
+      *last = b;
+      b = b->next;
+    }
+    return worst;
+  } else {
+    printf("Error: invalid method\n");
+    return NULL;
   }
 }
 
@@ -366,26 +389,45 @@ void check_heap(void *data) {
   printf("Heap address: %p\n", sbrk(0));
 }
 
-void memory_usage() {
-  t_block current = base;    // Comienza desde el primer bloque
-  size_t total_assigned = 0; // Acumulador para los bloques asignados
-  size_t total_free = 0;     // Acumulador para los bloques libres
+memory_stats memory_usage() {
+  t_block current = base;
+  size_t total_assigned = 0;
+  size_t total_free = 0;
+  size_t internal_fragmentation = 0;
+  size_t external_fragmentation = 0;
 
-  // Recorre todos los bloques en la lista encadenada
   while (current != NULL) {
     if (current->free) {
-      total_free += current->size; // Acumula el tamaño de los bloques libres
+      total_free += current->size;
+
+      // Considerar como fragmentación externa solo bloques inutilizables
+      if (current->size < BLOCK_SIZE) {
+        external_fragmentation += current->size;
+      }
     } else {
-      total_assigned +=
-          current->size; // Acumula el tamaño de los bloques asignados
+      total_assigned += current->size;
+
+      // Fragmentación interna: diferencia entre tamaño real y útil
+      if (current->size % BLOCK_SIZE != 0) {
+        internal_fragmentation += BLOCK_SIZE - (current->size % BLOCK_SIZE);
+      }
     }
-    current = current->next; // Avanza al siguiente bloque
+    current = current->next;
   }
 
-  // Imprime los resultados
+  size_t total_fragmentation = internal_fragmentation + external_fragmentation;
+
+  // Imprimir los resultados
   printf("\033[1;33mMemory usage\033[0m\n");
   printf("Total memory assigned: %zu bytes\n", total_assigned);
   printf("Total free memory: %zu bytes\n", total_free);
+  printf("Internal fragmentation: %zu bytes\n", internal_fragmentation);
+  printf("External fragmentation: %zu bytes\n", external_fragmentation);
+  printf("Total fragmentation: %zu bytes\n", total_fragmentation);
+
+  // Devolver estadísticas en una estructura
+  return (memory_stats){total_assigned, total_free, internal_fragmentation,
+                        external_fragmentation, total_fragmentation};
 }
 
 void *call_malloc(size_t size) {

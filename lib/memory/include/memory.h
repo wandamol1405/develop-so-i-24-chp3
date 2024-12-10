@@ -28,6 +28,8 @@
 #define FIRST_FIT 0
 /** Política de asignación Best Fit. */
 #define BEST_FIT 1
+/** Política de asignacion Worst Fit. */
+#define WORST_FIT 2
 /** Tamaño del bloque */
 #define DATA_START 1
 /** Macro para asignar memoria. */
@@ -60,6 +62,19 @@ struct s_block {
 
 /** Tipo de puntero para un bloque de memoria. */
 typedef struct s_block *t_block;
+
+/**
+ * @struct memory_stats
+ * @brief Estructura para almacenar estadísticas de uso de memoria.
+ *
+ */
+typedef struct memory_stats {
+  size_t total_assigned;         /**< Tamaño total de la memoria asignada. */
+  size_t total_free;             /**< Tamaño total de la memoria libre. */
+  size_t internal_fragmentation; /**< Fragmentación interna. */
+  size_t external_fragmentation; /**< Fragmentación externa. */
+  size_t total_fragmentation;    /**< Fragmentación total. */
+} memory_stats;
 
 /**
  * @brief Obtiene el bloque que contiene una dirección de memoria dada.
@@ -173,7 +188,7 @@ void malloc_control(int mode);
  * @brief Imprime el uso de memoria actual del proceso.
  *
  */
-void memory_usage();
+memory_stats memory_usage();
 
 /**
  * @brief Establece el método de asignación de memoria.
