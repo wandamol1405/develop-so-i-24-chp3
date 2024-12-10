@@ -10,15 +10,15 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 /**
  * @brief Macro para alinear una cantidad de bytes al siguiente múltiplo de 8.
- * 
+ *
  * @param x Cantidad de bytes a alinear.
  */
-#define align(x) (((((x)-1) >> 3) << 3) + 8)
+#define align(x) (((((x) - 1) >> 3) << 3) + 8)
 
 /** Tamaño mínimo de un bloque de memoria. */
 #define BLOCK_SIZE 40
@@ -30,21 +30,32 @@
 #define BEST_FIT 1
 /** Tamaño del bloque */
 #define DATA_START 1
+/** Macro para asignar memoria. */
+#define malloc(size) call_malloc(size)
+/** Macro para liberar memoria. */
+#define free(p) call_free(p)
+/** Macro para asignar memoria inicializada a cero. */
+#define calloc(number, size) call_calloc(number, size)
+/** Macro para redimensionar un bloque de memoria. */
+#define realloc(p, size) call_realloc(p, size)
+/** Nombre del archivo log */
+#define FILENAME_LOG "memory.log"
 
 /**
  * @struct s_block
  * @brief Estructura para representar un bloque de memoria.
  *
- * Contiene la información necesaria para gestionar la asignación y 
+ * Contiene la información necesaria para gestionar la asignación y
  * liberación de un bloque de memoria.
  */
 struct s_block {
-    size_t size;          /**< Tamaño del bloque de datos. */
-    struct s_block *next; /**< Puntero al siguiente bloque en la lista enlazada. */
-    struct s_block *prev; /**< Puntero al bloque anterior en la lista enlazada. */
-    int free;             /**< Indicador de si el bloque está libre (1) o ocupado (0). */
-    void *ptr;            /**< Puntero a la dirección de los datos almacenados. */
-    char data[DATA_START];         /**< Área donde comienzan los datos del bloque. */
+  size_t size; /**< Tamaño del bloque de datos. */
+  struct s_block
+      *next; /**< Puntero al siguiente bloque en la lista enlazada. */
+  struct s_block *prev; /**< Puntero al bloque anterior en la lista enlazada. */
+  int free;  /**< Indicador de si el bloque está libre (1) o ocupado (0). */
+  void *ptr; /**< Puntero a la dirección de los datos almacenados. */
+  char data[DATA_START]; /**< Área donde comienzan los datos del bloque. */
 };
 
 /** Tipo de puntero para un bloque de memoria. */
@@ -71,7 +82,8 @@ int valid_addr(void *p);
  *
  * @param last Puntero al último bloque.
  * @param size Tamaño solicitado.
- * @return t_block Puntero al bloque encontrado, o NULL si no se encuentra ninguno.
+ * @return t_block Puntero al bloque encontrado, o NULL si no se encuentra
+ * ninguno.
  */
 t_block find_block(t_block *last, size_t size);
 
@@ -85,7 +97,8 @@ t_block find_block(t_block *last, size_t size);
 t_block extend_heap(t_block last, size_t s);
 
 /**
- * @brief Divide un bloque de memoria en dos, si el tamaño solicitado es menor que el bloque disponible.
+ * @brief Divide un bloque de memoria en dos, si el tamaño solicitado es menor
+ * que el bloque disponible.
  *
  * @param b Bloque a dividir.
  * @param s Tamaño del nuevo bloque.
@@ -114,23 +127,24 @@ void copy_block(t_block src, t_block dst);
  * @param size Tamaño en bytes del bloque a asignar.
  * @return void* Puntero al área de datos asignada.
  */
-void *malloc(size_t size);
+void *my_malloc(size_t size);
 
 /**
  * @brief Libera un bloque de memoria previamente asignado.
  *
  * @param p Puntero al área de datos a liberar.
  */
-void free(void *p);
+void my_free(void *p);
 
 /**
- * @brief Asigna un bloque de memoria para un número de elementos, inicializándolo a cero.
+ * @brief Asigna un bloque de memoria para un número de elementos,
+ * inicializándolo a cero.
  *
  * @param number Número de elementos.
  * @param size Tamaño de cada elemento.
  * @return void* Puntero al área de datos asignada e inicializada.
  */
-void *calloc(size_t number, size_t size);
+void *my_calloc(size_t number, size_t size);
 
 /**
  * @brief Cambia el tamaño de un bloque de memoria previamente asignado.
@@ -139,7 +153,7 @@ void *calloc(size_t number, size_t size);
  * @param size Nuevo tamaño en bytes.
  * @return void* Puntero al área de datos redimensionada.
  */
-void *realloc(void *p, size_t size);
+void *my_realloc(void *p, size_t size);
 
 /**
  * @brief Verifica el estado del heap y detecta bloques libres consecutivos.
@@ -154,3 +168,85 @@ void check_heap(void *data);
  * @param mode Modo de asignación (0 para First Fit, 1 para Best Fit).
  */
 void malloc_control(int mode);
+
+/**
+ * @brief Imprime el uso de memoria actual del proceso.
+ *
+ */
+void memory_usage();
+
+/**
+ * @brief Establece el método de asignación de memoria.
+ *
+ * @param m Método de asignación (0 para First Fit, 1 para Best Fit).
+ */
+void set_method(int m);
+
+/**
+ * @brief Obtiene el método de asignación de memoria actual.
+ *
+ * @param m Método de asignación (0 para First Fit, 1 para Best Fit).
+ */
+void get_method(int m);
+
+void malloc_control(int m);
+
+/**
+ * @brief Abre un archivo de log para registrar las operaciones de memoria.
+ *
+ * @param filename Nombre del archivo de log.
+ */
+void open_log_file();
+
+/**
+ * @brief Registra una operación de memoria en el archivo de log.
+ *
+ * @param operation Operación realizada.
+ * @param ptr Puntero a la dirección de memoria.
+ * @param size Tamaño de la operación.
+ */
+
+void log_memory_operation(const char *operation, void *ptr, size_t size);
+
+/**
+ * @brief Cierra el archivo de log.
+ *
+ */
+void close_log_file();
+
+/**
+ * @brief Envuelve la función malloc para registrar la operación en el archivo
+ * de log.
+ *
+ * @param size Tamaño en bytes del bloque a asignar.
+ * @return void* Puntero al bloque asignado.
+ */
+void *call_malloc(size_t size);
+
+/**
+ * @brief Envuelve la función calloc para registrar la operación en el archivo
+ * de log.
+ *
+ * @param size Tamaño en bytes del bloque a asignar.
+   @param number Número de elementos.
+ * @return void* Puntero al bloque asignado.
+ */
+void *call_calloc(size_t num, size_t size);
+
+/**
+ * @brief Envuelve la función free para registrar la operación en el archivo de
+ * log.
+ *
+ * @param ptr Puntero al bloque de memoria a liberar.
+ */
+void call_free(void *ptr);
+
+/**
+ * @brief Envuelve la función realloc para registrar la operación en el archivo
+ * de log.
+ *
+ * @param ptr Puntero al bloque de memoria a redimensionar.
+ * @param size Nuevo tamaño en bytes.
+ * @return void* Puntero al bloque redimensionado.
+ */
+void *call_realloc(void *ptr, size_t size);
