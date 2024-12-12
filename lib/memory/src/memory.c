@@ -389,7 +389,7 @@ void check_heap(void *data) {
   printf("Heap address: %p\n", sbrk(0));
 }
 
-memory_stats memory_usage() {
+memory_stats memory_usage(int active_print) {
   t_block current = base;
   size_t total_assigned = 0;
   size_t total_free = 0;
@@ -418,13 +418,14 @@ memory_stats memory_usage() {
   size_t total_fragmentation = internal_fragmentation + external_fragmentation;
 
   // Imprimir los resultados
-  printf("\033[1;33mMemory usage\033[0m\n");
-  printf("Total memory assigned: %zu bytes\n", total_assigned);
-  printf("Total free memory: %zu bytes\n", total_free);
-  printf("Internal fragmentation: %zu bytes\n", internal_fragmentation);
-  printf("External fragmentation: %zu bytes\n", external_fragmentation);
-  printf("Total fragmentation: %zu bytes\n", total_fragmentation);
-
+  if (active_print) {
+    printf("\033[1;33mMemory usage\033[0m\n");
+    printf("Total memory assigned: %zu bytes\n", total_assigned);
+    printf("Total free memory: %zu bytes\n", total_free);
+    printf("Internal fragmentation: %zu bytes\n", internal_fragmentation);
+    printf("External fragmentation: %zu bytes\n", external_fragmentation);
+    printf("Total fragmentation: %zu bytes\n", total_fragmentation);
+  }
   // Devolver estadísticas en una estructura
   return (memory_stats){total_assigned, total_free, internal_fragmentation,
                         external_fragmentation, total_fragmentation};

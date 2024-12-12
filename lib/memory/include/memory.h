@@ -187,8 +187,9 @@ void malloc_control(int mode);
 /**
  * @brief Imprime el uso de memoria actual del proceso.
  *
+ * @param active_print Indica si se debe imprimir el uso de memoria.
  */
-memory_stats memory_usage();
+memory_stats memory_usage(int active_print);
 
 /**
  * @brief Establece el método de asignación de memoria.
