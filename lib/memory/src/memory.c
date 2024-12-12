@@ -61,7 +61,7 @@ t_block find_block(t_block *last, size_t size) {
       b = b->next;
     }
     return best;
-  } else {
+  } else if (method == WORST_FIT) {
     size_t dif = 0;
     t_block worst = NULL;
 
@@ -79,6 +79,9 @@ t_block find_block(t_block *last, size_t size) {
       b = b->next;
     }
     return worst;
+  } else {
+    printf("Error: invalid method\n");
+    return NULL;
   }
 }
 
@@ -203,6 +206,8 @@ void malloc_control(int m) {
     set_method(0);
   } else if (m == 1) {
     set_method(1);
+  } else if (m = 2) {
+    set_method(2);
   } else {
     printf("Error: invalid method\n");
   }
