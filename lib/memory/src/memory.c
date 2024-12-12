@@ -61,7 +61,7 @@ t_block find_block(t_block *last, size_t size) {
       b = b->next;
     }
     return best;
-  } else if (method == WORST_FIT) {
+  } else {
     size_t dif = 0;
     t_block worst = NULL;
 
@@ -79,9 +79,6 @@ t_block find_block(t_block *last, size_t size) {
       b = b->next;
     }
     return worst;
-  } else {
-    printf("Error: invalid method\n");
-    return NULL;
   }
 }
 
