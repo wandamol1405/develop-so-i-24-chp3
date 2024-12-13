@@ -86,42 +86,21 @@ t_block find_block(t_block *last, size_t size) {
 }
 
 void split_block(t_block b, size_t s) {
-  // Verifica si el tamaño del bloque es suficiente para ser dividido
   if (b->size <= s + BLOCK_SIZE) {
-    return; // No se puede dividir si el bloque es muy pequeño
-  }
-
-  // Crear un nuevo bloque que comenzará después de 'b->data + s'
-  t_block new = (t_block)((char *)b->data + s);
-
-  // Configura el nuevo bloque
-  new->size = b->size - s - BLOCK_SIZE; // El tamaño del nuevo bloque
-  new->free = 1;                        // El nuevo bloque estará libre
-  new->next =
-      b->next;   // El siguiente bloque será el que era siguiente al bloque 'b'
-  new->prev = b; // El bloque anterior de 'new' es el bloque original 'b'
-  new->ptr = new->data; // El puntero 'ptr' apunta al inicio de los datos
-  // Actualiza el puntero 'next' del bloque original 'b' para que apunte al
-  // nuevo bloque
-  b->size = s;   // El tamaño del bloque original ahora será el solicitado 's'
-  b->next = new; // El bloque original ahora apunta al nuevo bloque
-
-  // Si el bloque original es el último bloque, actualiza el puntero 'next' para
-  // que apunte a NULL
-  if (new->next) {
-    new->next->prev =
-        new; // Si el siguiente bloque no es NULL, actualiza su puntero 'prev'
-  }
-
-  // Verifica si el nuevo bloque es el último bloque
-  if (new->next == NULL) {
-    // Si 'new' es el último bloque, no hay que hacer más cambios en la lista
     return;
   }
 
-  // Si el bloque siguiente está libre, intentar fusionarlo
-  if (new->next &&new->next->free) {
-    fusion(new); // Fusiona el nuevo bloque con el siguiente si está libre
+  t_block new;
+  new = (t_block)(b->data + s);
+  new->size = b->size - s - BLOCK_SIZE;
+  new->next = b->next;
+  new->prev = b;
+  new->free = 1;
+  new->ptr = new->data; // Set ptr to data
+  b->size = s;
+  b->next = new;
+  if (new->next) {
+    new->next->prev = new;
   }
 }
 
