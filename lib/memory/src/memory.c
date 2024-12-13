@@ -110,10 +110,11 @@ t_block get_block(void *p) {
 int valid_addr(void *p) {
   t_block b = base;
   while (b) {
-    if ((char *)p > (char *)b && (char *)p < (char *)(b->data + b->size)) {
-      return p == (get_block(p))->ptr;
+    // Compara si 'p' está dentro del rango de la estructura t_block
+    if ((char *)p >= (char *)b && (char *)p < (char *)(b->data + b->size)) {
+      return p == (get_block(p))->ptr; // Verifica que el puntero coincida
     }
-    b = b->next;
+    b = b->next; // Avanza al siguiente bloque
   }
   return 0; // Dirección inválida
 }
