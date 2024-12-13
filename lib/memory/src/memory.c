@@ -92,7 +92,7 @@ void split_block(t_block b, size_t s) {
   }
 
   // Crear un nuevo bloque que comenzará después de 'b->data + s'
-  t_block new = (t_block)(b->data + s);
+  t_block new = (t_block)((char *)b->data + s);
 
   // Configura el nuevo bloque
   new->size = b->size - s - BLOCK_SIZE; // El tamaño del nuevo bloque
