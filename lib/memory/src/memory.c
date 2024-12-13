@@ -34,53 +34,40 @@ void log_memory_operation(const char *operation, void *ptr, size_t size) {
 }
 
 t_block find_block(t_block *last, size_t size) {
-  t_block b = base;
-
-  if (method == FIRST_FIT) {
-    while (b && !(b->free && b->size >= size)) {
-      *last = b;
-      b = b->next;
-    }
-
-    return (b);
-  } else if (method == BEST_FIT) {
-    size_t dif = PAGESIZE;
-    t_block best = NULL;
-
-    while (b) {
-      if (b->free) {
-        if (b->size == size) {
-          return b;
-        }
-        if (b->size > size && (b->size - size) < dif) {
-          dif = b->size - size;
-          best = b;
-        }
-      }
-      *last = b;
-      b = b->next;
-    }
-    return best;
-  } else if (method == WORST_FIT) {
-    size_t dif = (size_t)-1;
-    t_block worst = NULL;
-
-    while (b) {
-      if (b->free) {
-
-        if (b->size > size && (b->size - size) > dif) {
-          dif = b->size - size;
-          worst = b;
-        }
-      }
-      *last = b;
-      b = b->next;
-    }
-    return worst;
-  } else {
+  if (method != FIRST_FIT && method != BEST_FIT && method != WORST_FIT) {
     printf("Error: invalid method\n");
     return NULL;
   }
+
+  t_block b = base;
+  t_block result = NULL; // Resultado final
+  size_t diff =
+      (method == BEST_FIT) ? PAGESIZE : (size_t)-1; // Inicialización específica
+
+  while (b) {
+    if (b->free) {
+      if (method == FIRST_FIT) {
+        if (b->size >= size) {
+          return b;
+        }
+      } else if (method == BEST_FIT) {
+        if (b->size >= size && (b->size - size) < diff) {
+          diff = b->size - size;
+          result = b;
+        }
+      } else if (method == WORST_FIT) {
+        if (b->size >= size && (b->size - size) > diff) {
+          diff = b->size - size;
+          result = b;
+        }
+      }
+    }
+    *last = b; // Actualizar el último bloque visitado
+    b = b->next;
+  }
+  return (method == FIRST_FIT)
+             ? NULL
+             : result; // Para First Fit, NULL si no se encuentra
 }
 
 void split_block(t_block b, size_t s) {
@@ -121,18 +108,14 @@ t_block get_block(void *p) {
 }
 
 int valid_addr(void *p) {
-  if (p == NULL || base == NULL) {
-    return 0;
-  }
-  t_block b = get_block(p);
-  t_block current = base;
-  while (current) {
-    if (current == b) {
-      return (current->ptr == p);
+  t_block b = base;
+  while (b) {
+    if ((char *)p > (char *)b && (char *)p < (char *)(b->data + b->size)) {
+      return p == (get_block(p))->ptr;
     }
-    current = current->next;
+    b = b->next;
   }
-  return 0;
+  return 0; // Dirección inválida
 }
 
 t_block fusion(t_block b) {
