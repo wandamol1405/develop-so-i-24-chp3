@@ -107,16 +107,14 @@ t_block get_block(void *p) {
   return (t_block)tmp;
 }
 
-int valid_addr(void *p) {
-  t_block b = base;
-  while (b) {
-    // Compara si 'p' está dentro del rango de la estructura t_block
-    if ((char *)p >= (char *)b && (char *)p < (char *)(b->data + b->size)) {
-      return p == (get_block(p))->ptr; // Verifica que el puntero coincida
+iint valid_addr(void *p) {
+  if (base) {
+    if (p > base && p < sbrk(0)) {
+      t_block b = get_block(p);
+      return b && (p == b->ptr);
     }
-    b = b->next; // Avanza al siguiente bloque
   }
-  return 0; // Dirección inválida
+  return (0);
 }
 
 t_block fusion(t_block b) {
