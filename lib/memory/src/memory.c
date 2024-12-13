@@ -71,7 +71,7 @@ t_block find_block(t_block *last, size_t size) {
 }
 
 void split_block(t_block b, size_t s) {
-  if (!valid_addr(b) || b->size <= s + BLOCK_SIZE) {
+  if (b->size <= s + BLOCK_SIZE) {
     return;
   }
 
