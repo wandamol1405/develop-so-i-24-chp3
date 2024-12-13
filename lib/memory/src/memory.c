@@ -77,8 +77,7 @@ void split_block(t_block b, size_t s) {
   }
 
   // Crear un nuevo bloque justo después del bloque actual
-  t_block new =
-      (t_block)(b->data + s); // No es necesario sumarle BLOCK_SIZE aquí
+  t_block new = (t_block)(b->ptr + s);
   new->size =
       b->size - s - BLOCK_SIZE; // El tamaño del nuevo bloque será el sobrante
   new->next = b->next; // El siguiente bloque es el que seguía al bloque actual
