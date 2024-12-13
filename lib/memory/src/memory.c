@@ -82,10 +82,15 @@ void split_block(t_block b, size_t s) {
     return;
   }
 
+  // Verificar que la nueva dirección está dentro del límite del bloque original
+  void *new_ptr = (char *)b->ptr + s;
+  if (new_ptr >= (char *)b->ptr + b->size) {
+    printf("Error: La nueva dirección está fuera de los límites del bloque\n");
+    return;
+  }
+
   // Crear un nuevo bloque justo después del bloque actual
-  t_block new =
-      (t_block)((char *)b->ptr + s); // Asegúrate de que se haga un casting a
-                                     // char* para aritmética de punteros
+  t_block new = (t_block)new_ptr; // Usar la nueva dirección calculada
   new->size =
       b->size - s - BLOCK_SIZE; // El tamaño del nuevo bloque será el sobrante
   new->next = b->next; // El siguiente bloque es el que seguía al bloque actual
