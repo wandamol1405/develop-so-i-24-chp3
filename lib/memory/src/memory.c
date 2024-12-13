@@ -62,14 +62,12 @@ t_block find_block(t_block *last, size_t size) {
     }
     return best;
   } else if (method == WORST_FIT) {
-    size_t dif = 0;
+    size_t dif = (size_t)-1;
     t_block worst = NULL;
 
     while (b) {
       if (b->free) {
-        if (b->size == size) {
-          return b;
-        }
+
         if (b->size > size && (b->size - size) > dif) {
           dif = b->size - size;
           worst = b;

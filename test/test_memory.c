@@ -53,10 +53,10 @@ void test_policies(int policy) {
   long end_time = get_time_in_microseconds();
 
   // Estadísticas de uso de memoria
-  size_t total_allocated = memory_usage().total_assigned;
-  size_t internal_fragmentation = memory_usage().internal_fragmentation;
-  size_t external_fragmentation = memory_usage().external_fragmentation;
-  size_t total_fragmentation = memory_usage().total_fragmentation;
+  size_t total_allocated = memory_usage(0).total_assigned;
+  size_t internal_fragmentation = memory_usage(0).internal_fragmentation;
+  size_t external_fragmentation = memory_usage(0).external_fragmentation;
+  size_t total_fragmentation = memory_usage(0).total_fragmentation;
 
   // Liberar cualquier asignación restante
   for (int i = 0; i < num_allocs; ++i) {
