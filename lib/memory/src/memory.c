@@ -75,7 +75,7 @@ void split_block(t_block b, size_t s) {
     return;
   }
 
-  t_block new = (t_block)(b->data + s);
+  t_block new = (t_block)(b->data + s + BLOCK_SIZE);
   new = (t_block)(b->data + s);
   new->size = b->size - s - BLOCK_SIZE;
   new->next = b->next;
