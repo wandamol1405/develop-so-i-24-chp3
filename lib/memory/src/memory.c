@@ -121,14 +121,18 @@ t_block get_block(void *p) {
 }
 
 int valid_addr(void *p) {
-  t_block b = base;
-  while (b) {
-    if ((char *)p > (char *)b && (char *)p < (char *)(b->data + b->size)) {
-      return p == (get_block(p))->ptr;
-    }
-    b = b->next;
+  if (p == NULL || base == NULL) {
+    return 0;
   }
-  return 0; // Dirección inválida
+  t_block b = get_block(p);
+  t_block current = base;
+  while (current) {
+    if (current == b) {
+      return (current->ptr == p);
+    }
+    current = current->next;
+  }
+  return 0;
 }
 
 t_block fusion(t_block b) {
