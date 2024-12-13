@@ -74,6 +74,12 @@ void split_block(t_block b, size_t s) {
   if (b->size <= s + BLOCK_SIZE) {
     return;
   }
+  // Comprobación de seguridad para asegurarse de que 'b->data + s' está dentro
+  // de los límites del bloque
+  if ((b->data + s) >= (b->data + b->size)) {
+    printf("Error: 'new' apunta fuera del bloque original\n");
+    return;
+  }
 
   t_block new;
   new = (t_block)(b->data + s);
