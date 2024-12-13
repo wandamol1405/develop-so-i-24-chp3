@@ -146,7 +146,7 @@ t_block get_block(void *p) {
 int valid_addr(void *p) {
   t_block b = base;
   while (b) {
-    if (p > (void *)b && p < (void *)(b->data + b->size)) {
+    if ((char *)p > (char *)b && (char *)p < (char *)(b->data + b->size)) {
       return p == (get_block(p))->ptr;
     }
     b = b->next;
