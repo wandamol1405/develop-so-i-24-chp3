@@ -71,38 +71,19 @@ t_block find_block(t_block *last, size_t size) {
 }
 
 void split_block(t_block b, size_t s) {
-  // Verifica si el bloque es lo suficientemente grande para ser dividido
   if (b->size <= s + BLOCK_SIZE) {
     return;
   }
 
-  // Asegurarse de que b->ptr es válido antes de hacer cualquier operación
-  if (b->ptr == NULL) {
-    printf("Error: b->ptr es NULL\n");
-    return;
-  }
-
-  // Verificar que la nueva dirección está dentro del límite del bloque original
-  void *new_ptr = (char *)b->ptr + s;
-  if (new_ptr >= (char *)b->ptr + b->size) {
-    printf("Error: La nueva dirección está fuera de los límites del bloque\n");
-    return;
-  }
-
-  // Crear un nuevo bloque justo después del bloque actual
-  t_block new = (t_block)new_ptr; // Usar la nueva dirección calculada
-  new->size =
-      b->size - s - BLOCK_SIZE; // El tamaño del nuevo bloque será el sobrante
-  new->next = b->next; // El siguiente bloque es el que seguía al bloque actual
-  new->prev = b;       // El bloque anterior al nuevo bloque es el actual
-  new->free = 1;       // El nuevo bloque está libre
-  new->ptr = new->data; // Establece el puntero de datos del nuevo bloque
-
-  b->size = s;   // Actualiza el tamaño del bloque actual
-  b->next = new; // Actualiza el siguiente bloque del bloque original
-
-  // Si el bloque original tiene un bloque siguiente, actualiza el puntero del
-  // siguiente
+  t_block new;
+  new = (t_block)(b->data + s);
+  new->size = b->size - s - BLOCK_SIZE;
+  new->next = b->next;
+  new->prev = b;
+  new->free = 1;
+  new->ptr = new->data; // Set ptr to data
+  b->size = s;
+  b->next = new;
   if (new->next) {
     new->next->prev = new;
   }
