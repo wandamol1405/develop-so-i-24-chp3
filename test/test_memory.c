@@ -1,4 +1,3 @@
-#include <malloc.h>
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,36 +14,34 @@ long get_time_in_microseconds() {
 
 void test_policies(int policy) {
   srand(time(NULL));
-  const int num_allocs = 1000;
-  const size_t min_size = 16;
-  const size_t max_size = 256;
-  size_t ordered_size = 0;
+  const int num_allocs = 5000;
+  const size_t min_size = 2;
+  const size_t max_size = 1028;
 
   void *allocations[num_allocs];
-  for (int i = 0; i < num_allocs; ++i) {
-    allocations[i] = NULL;
-  }
+  memset(allocations, 0, sizeof(allocations)); // Inicializar punteros a NULL
 
-  malloc_control(policy);
+  malloc_control(policy); // Configurar la política de asignación
 
   long start_time = get_time_in_microseconds();
+  size_t total_requested = 0; // Rastrear el tamaño total solicitado
 
-  // Fase de asignación con liberaciones intercaladas
   for (int i = 0; i < num_allocs; ++i) {
     size_t size = (rand() % (max_size - min_size + 1)) + min_size;
-    allocations[i] = malloc(size);
-    ordered_size += size;
+    total_requested += size;
 
+    allocations[i] = call_malloc(size);
     if (allocations[i] == NULL) {
-      fprintf(log_test_file, "Allocation %d failed.\n", i);
+      fprintf(log_test_file, "Allocation %d failed. Requested: %zu bytes\n", i,
+              size);
       continue;
     }
 
     // Liberar aleatoriamente un bloque existente
-    if (rand() % 3 == 0) { // Aproximadamente 1 de cada 3 asignaciones se libera
-      int free_index = rand() % (i + 1); // Escoger una asignación previa
+    if (rand() % 2 == 0) {
+      int free_index = rand() % (i + 1); // Seleccionar un índice previo
       if (allocations[free_index] != NULL) {
-        free(allocations[free_index]);
+        call_free(allocations[free_index], 1);
         allocations[free_index] = NULL;
       }
     }
@@ -52,31 +49,32 @@ void test_policies(int policy) {
 
   long end_time = get_time_in_microseconds();
 
-  // Estadísticas de uso de memoria
-  size_t total_allocated = memory_usage(0).total_assigned;
-  size_t internal_fragmentation = memory_usage(0).internal_fragmentation;
-  size_t external_fragmentation = memory_usage(0).external_fragmentation;
-  size_t total_fragmentation = memory_usage(0).total_fragmentation;
+  // Obtener estadísticas de memoria
+  MemoryUsage usage = memory_usage(0);
 
-  // Liberar cualquier asignación restante
+  // Liberar todas las asignaciones restantes
   for (int i = 0; i < num_allocs; ++i) {
     if (allocations[i] != NULL) {
-      free(allocations[i]);
+      call_free(allocations[i], 1);
+      allocations[i] = NULL;
     }
   }
 
   double time_taken = (end_time - start_time) / 1e6;
 
-  // Reporte
+  // Reporte de resultados
   fprintf(log_test_file, "Policy %d:\n", policy);
   fprintf(log_test_file, "  Time taken: %.6f seconds\n", time_taken);
-  fprintf(log_test_file, "  Total allocated: %zu bytes\n", total_allocated);
+  fprintf(log_test_file, "  Total requested: %zu bytes\n", total_requested);
+  fprintf(log_test_file, "  Total allocated: %zu bytes\n",
+          usage.total_assigned);
+  fprintf(log_test_file, "  Total free: %zu bytes\n", usage.total_free);
   fprintf(log_test_file, "  Internal fragmentation: %zu bytes\n",
-          internal_fragmentation);
+          usage.internal_fragmentation);
   fprintf(log_test_file, "  External fragmentation: %zu bytes\n",
-          external_fragmentation);
+          usage.external_fragmentation);
   fprintf(log_test_file, "  Total fragmentation: %zu bytes\n\n",
-          total_fragmentation);
+          usage.total_fragmentation);
   fflush(log_test_file);
 }
 
@@ -84,21 +82,47 @@ void open_log_test_file() {
   log_test_file = fopen("test.log", "w");
   if (log_test_file == NULL) {
     perror("Failed to open log file");
-    exit(1);
+    exit(EXIT_FAILURE);
+  }
+}
+
+void cleanup_allocations(void **allocations, int num_allocs) {
+  for (int i = 0; i < num_allocs; ++i) {
+    if (allocations[i] != NULL) {
+      call_free(allocations[i], 1);
+      allocations[i] = NULL;
+    }
+  }
+}
+
+void close_log_test_file() {
+  if (log_test_file != NULL) {
+    fclose(log_test_file);
   }
 }
 
 int main() {
-  open_log_file();
+  memory_manager_init();
   open_log_test_file();
+  open_log_file();
   fprintf(log_test_file, "Memory allocation policies test\n\n");
-  fprintf(log_test_file, "Test First Fit\n");
+
+  fprintf(log_test_file, "Testing First Fit Policy\n");
   test_policies(FIRST_FIT);
-  fprintf(log_test_file, "Test Best Fit\n");
+
+  fprintf(log_test_file, "Testing Best Fit Policy\n");
   test_policies(BEST_FIT);
-  fprintf(log_test_file, "Test Worst Fit\n");
+
+  fprintf(log_test_file, "Testing Worst Fit Policy\n");
   test_policies(WORST_FIT);
-  fclose(log_test_file);
+
+  memory_manager_cleanup();
   close_log_file();
+  close_log_test_file();
+  fflush(stdout);
+  fflush(stderr);
+  fclose(stdout);
+  fclose(stderr);
+
   return 0;
 }

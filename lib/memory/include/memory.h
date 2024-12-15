@@ -32,15 +32,7 @@
 #define WORST_FIT 2
 /** Tamaño del bloque */
 #define DATA_START 1
-/** Macro para asignar memoria. */
-#define malloc(size) call_malloc(size)
-/** Macro para liberar memoria. */
-#define free(p) call_free(p)
-/** Macro para asignar memoria inicializada a cero. */
-#define calloc(number, size) call_calloc(number, size)
-/** Macro para redimensionar un bloque de memoria. */
-#define realloc(p, size) call_realloc(p, size)
-/** Nombre del archivo log */
+/** Nombre del archivo de log. */
 #define FILENAME_LOG "memory.log"
 
 /**
@@ -57,6 +49,8 @@ struct s_block {
   struct s_block *prev; /**< Puntero al bloque anterior en la lista enlazada. */
   int free;  /**< Indicador de si el bloque está libre (1) o ocupado (0). */
   void *ptr; /**< Puntero a la dirección de los datos almacenados. */
+  int is_mapped; /**< Indicador de si el bloque está mapeado a memoria (1) o no
+                    (0). */
   char data[DATA_START]; /**< Área donde comienzan los datos del bloque. */
 };
 
@@ -68,13 +62,13 @@ typedef struct s_block *t_block;
  * @brief Estructura para almacenar estadísticas de uso de memoria.
  *
  */
-typedef struct memory_stats {
+typedef struct MemoryUsage {
   size_t total_assigned;         /**< Tamaño total de la memoria asignada. */
   size_t total_free;             /**< Tamaño total de la memoria libre. */
   size_t internal_fragmentation; /**< Fragmentación interna. */
   size_t external_fragmentation; /**< Fragmentación externa. */
   size_t total_fragmentation;    /**< Fragmentación total. */
-} memory_stats;
+} MemoryUsage;
 
 /**
  * @brief Obtiene el bloque que contiene una dirección de memoria dada.
@@ -149,7 +143,7 @@ void *my_malloc(size_t size);
  *
  * @param p Puntero al área de datos a liberar.
  */
-void my_free(void *p);
+void my_free(void *p, int activate_mumap);
 
 /**
  * @brief Asigna un bloque de memoria para un número de elementos,
@@ -175,7 +169,7 @@ void *my_realloc(void *p, size_t size);
  *
  * @param data Información adicional para la verificación.
  */
-void check_heap(void *data);
+void check_heap(void);
 
 /**
  * @brief Configura el modo de asignación de memoria (First Fit o Best Fit).
@@ -189,7 +183,7 @@ void malloc_control(int mode);
  *
  * @param active_print Indica si se debe imprimir el uso de memoria.
  */
-memory_stats memory_usage(int active_print);
+MemoryUsage memory_usage(int active_print);
 
 /**
  * @brief Establece el método de asignación de memoria.
@@ -203,7 +197,7 @@ void set_method(int m);
  *
  * @param m Método de asignación (0 para First Fit, 1 para Best Fit).
  */
-void get_method(int m);
+int get_method();
 
 void malloc_control(int m);
 
@@ -255,7 +249,7 @@ void *call_calloc(size_t num, size_t size);
  *
  * @param ptr Puntero al bloque de memoria a liberar.
  */
-void call_free(void *ptr);
+void call_free(void *ptr, int activate_mumap);
 
 /**
  * @brief Envuelve la función realloc para registrar la operación en el archivo
@@ -266,3 +260,16 @@ void call_free(void *ptr);
  * @return void* Puntero al bloque redimensionado.
  */
 void *call_realloc(void *ptr, size_t size);
+
+/**
+ * @brief Inicializa el administrador de memoria.
+ *
+ */
+void memory_manager_init();
+/**
+
+ * @brief Limpia el administrador de memoria.
+ *
+
+ */
+void memory_manager_cleanup();

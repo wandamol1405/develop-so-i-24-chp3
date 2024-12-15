@@ -1,89 +1,128 @@
-#include "memory.h"
 #include <memory.h>
+#include <pthread.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <time.h>
 
 typedef struct s_block *t_block;
-typedef struct memory_stats memory_stats;
+typedef struct MemoryUsage MemoryUsage;
 void *base = NULL;
 int method = 0;
 FILE *log_file = NULL;
+size_t count_internal_fragmentation = 0;
+pthread_mutex_t allocator_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void open_log_file() {
   log_file = fopen(FILENAME_LOG, "w");
   if (log_file == NULL) {
     perror("No se pudo abrir el archivo de log");
-    exit(1);
   }
 }
 
 // Función para registrar las operaciones de memoria
 void log_memory_operation(const char *operation, void *ptr, size_t size) {
-  if (log_file != NULL) {
-    time_t now = time(NULL);
-    struct tm *time_info = localtime(&now);
-    char time_str[20];
-    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", time_info);
-
-    fprintf(log_file, "[%s] Operation: %s, Address: %p, Size: %zu bytes\n",
-            time_str, operation, ptr, size);
-    fflush(log_file); // Asegurar que se escriba inmediatamente en el archivo
+  if (log_file == NULL) {
+    fprintf(stderr, "Error: log_file is NULL. Cannot log operation: %s\n",
+            operation);
+    return;
   }
+
+  if (ptr == NULL) {
+    fprintf(
+        stderr,
+        "Warning: NULL pointer passed to log_memory_operation. Operation: %s\n",
+        operation);
+  }
+
+  time_t now = time(NULL);
+  struct tm *time_info = localtime(&now);
+  char time_str[20];
+  strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", time_info);
+
+  fprintf(log_file, "[%s] Operation: %s, Address: %p, Size: %zu bytes\n",
+          time_str, operation, ptr, size);
+  fflush(log_file);
 }
 
 t_block find_block(t_block *last, size_t size) {
+  t_block b = base;
+
+  // Validación de método
   if (method != FIRST_FIT && method != BEST_FIT && method != WORST_FIT) {
-    printf("Error: invalid method\n");
+    fprintf(stderr, "Error: Invalid method value %d\n", method);
     return NULL;
   }
 
-  t_block b = base;
-  t_block result = NULL; // Resultado final
-  size_t diff =
-      (method == BEST_FIT) ? PAGESIZE : (size_t)-1; // Inicialización específica
+  t_block selected = NULL;
 
-  while (b) {
-    if (b->free) {
-      if (method == FIRST_FIT) {
-        if (b->size >= size) {
-          return b;
-        }
-      } else if (method == BEST_FIT) {
-        if (b->size >= size && (b->size - size) < diff) {
-          diff = b->size - size;
-          result = b;
-        }
-      } else if (method == WORST_FIT) {
-        if (b->size >= size && (b->size - size) > diff) {
-          diff = b->size - size;
-          result = b;
+  // FIRST_FIT: detenerse en el primer bloque válido
+  if (method == FIRST_FIT) {
+    while (b) {
+      if (b->free && b->size >= size) {
+        count_internal_fragmentation = b->size - size;
+        return b; // Devuelve el primer bloque encontrado
+      }
+      *last = b;
+      b = b->next;
+    }
+  }
+
+  // BEST_FIT: encontrar el bloque con el tamaño más cercano
+  else if (method == BEST_FIT) {
+    size_t min_diff = (size_t)-1;
+    while (b) {
+      if (b->free && b->size >= size) {
+        size_t diff = b->size - size;
+        if (diff < min_diff) {
+          min_diff = diff;
+          count_internal_fragmentation = min_diff;
+          selected = b;
+          if (diff == 0)
+            break; // Si el ajuste es perfecto, detener
         }
       }
+      *last = b;
+      b = b->next;
     }
-    *last = b; // Actualizar el último bloque visitado
-    b = b->next;
   }
-  return (method == FIRST_FIT)
-             ? NULL
-             : result; // Para First Fit, NULL si no se encuentra
+
+  // WORST_FIT: encontrar el bloque más grande que cumpla
+  else if (method == WORST_FIT) {
+    size_t max_size = 0;
+    while (b) {
+      if (b->free && b->size >= size) {
+        if (b->size > max_size) {
+          max_size = b->size;
+          count_internal_fragmentation = max_size - size;
+          selected = b;
+        }
+      }
+      *last = b;
+      b = b->next;
+    }
+  }
+  return selected;
 }
 
 void split_block(t_block b, size_t s) {
   if (b->size <= s + BLOCK_SIZE) {
     return;
   }
-
   t_block new;
   new = (t_block)(b->data + s);
-  new->size = (b->size - s) - BLOCK_SIZE;
+  new->size = b->size - s - BLOCK_SIZE;
   new->next = b->next;
   new->prev = b;
   new->free = 1;
-  new->ptr = new->data; // Set ptr to data
+  new->ptr = new->data;
+  new->is_mapped = 0;
   b->size = s;
   b->next = new;
+
   if (new->next) {
     new->next->prev = new;
   }
@@ -95,72 +134,85 @@ void copy_block(t_block src, t_block dst) {
   sdata = src->ptr;
   ddata = dst->ptr;
 
-  for (i = 0; (i * 4) < src->size && (i * 4) < dst->size; i++)
+  for (i = 0; i * sizeof(size_t) < src->size && i * sizeof(size_t) < dst->size;
+       i++)
     ddata[i] = sdata[i];
 }
 
 t_block get_block(void *p) {
-  char *tmp;
-  tmp = (char *)p;
-
-  tmp -= BLOCK_SIZE;
-  return (t_block)tmp;
+  if (p == NULL) {
+    return NULL;
+  }
+  return (t_block)((char *)p - offsetof(struct s_block, data));
 }
 
-iint valid_addr(void *p) {
-  if (base) {
-    if (p > base && p < sbrk(0)) {
-      t_block b = get_block(p);
-      return b && (p == b->ptr);
-    }
+int valid_addr(void *p) {
+  if (p == NULL || base == NULL) {
+    return 0;
   }
-  return (0);
+  t_block b = get_block(p);
+  t_block current = base;
+  while (current) {
+    if (current == b) {
+      return (current->ptr == p);
+    }
+    current = current->next;
+  }
+  return 0;
 }
 
 t_block fusion(t_block b) {
-  // Verifica si el bloque actual está libre
-  if (!b->free) {
-    return b; // Si el bloque no está libre, no hace nada
-  }
-
-  // Verifica si el bloque siguiente existe y está libre
-  if (b->next && b->next->free) {
-    // Sumar el tamaño del bloque siguiente al bloque actual
-    b->size += b->next->size;
-
-    // Saltar el bloque siguiente, conectando al subsiguiente
-    b->next = b->next->next;
-
-    // Actualizar el puntero 'prev' del nuevo bloque siguiente
-    if (b->next) {
+  // Fusión con los bloques siguientes
+  while (b->next && b->next->free) {
+    t_block next_block = b->next;
+    b->size += BLOCK_SIZE + next_block->size;
+    b->next = next_block->next;
+    if (b->next)
       b->next->prev = b;
+    // Revisar si el bloque fusionado sigue en el espacio mapeado
+    if (!next_block->is_mapped) {
+      b->is_mapped = 0;
     }
   }
 
-  // Retornar el bloque fusionado
+  // Fusión con los bloques previos
+  while (b->prev && b->prev->free) {
+    t_block prev_block = b->prev;
+    prev_block->size += BLOCK_SIZE + b->size;
+    prev_block->next = b->next;
+    if (b->next)
+      b->next->prev = prev_block;
+    // Revisar si el bloque fusionado sigue en el espacio mapeado
+    if (!b->is_mapped) {
+      prev_block->is_mapped = 0;
+    }
+    b = prev_block;
+  }
   return b;
 }
 
 t_block extend_heap(t_block last, size_t s) {
   t_block b;
-  b = mmap(0, s, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  b = mmap(0, s + BLOCK_SIZE, PROT_READ | PROT_WRITE,
+           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
   if (b == MAP_FAILED) {
+    perror("mmap");
     return NULL;
   }
   b->size = s;
   b->next = NULL;
   b->prev = last;
   b->ptr = b->data;
+  b->free = 0;
+  b->is_mapped = 1;
 
   if (last)
     last->next = b;
-
-  b->free = 0;
   return b;
 }
 
-void get_method(int m) { method = m; }
+int get_method() { return method; }
 
 void set_method(int m) { method = m; }
 
@@ -169,14 +221,15 @@ void malloc_control(int m) {
     set_method(0);
   } else if (m == 1) {
     set_method(1);
-  } else if (m = 2) {
+  } else if (m == 2) {
     set_method(2);
   } else {
-    printf("Error: invalid method\n");
+    fprintf(stderr, "Error: Invalid method value %d\n", m);
   }
 }
 
 void *my_malloc(size_t size) {
+  pthread_mutex_lock(&allocator_lock);
   t_block b, last;
   size_t s;
   s = align(size);
@@ -185,58 +238,85 @@ void *my_malloc(size_t size) {
     last = base;
     b = find_block(&last, s);
     if (b) {
-      if ((b->size - s) >= (BLOCK_SIZE + 4))
+      if ((b->size - s) >= (BLOCK_SIZE + 4)) {
         split_block(b, s);
+      }
       b->free = 0;
     } else {
       b = extend_heap(last, s);
-      if (!b)
+      if (!b) {
+        pthread_mutex_unlock(&allocator_lock);
         return (NULL);
+      }
     }
   } else {
     b = extend_heap(NULL, s);
-    if (!b)
+    if (!b) {
+      pthread_mutex_unlock(&allocator_lock);
       return (NULL);
+    }
     base = b;
   }
+  pthread_mutex_unlock(&allocator_lock);
+
   return (b->data);
 }
 
-void my_free(void *ptr) {
+void my_free(void *ptr, int activate_mumap) {
+  pthread_mutex_lock(&allocator_lock);
+  if (ptr == NULL) {
+    pthread_mutex_unlock(&allocator_lock);
+    return; // No hay nada que liberar
+  }
+
   t_block b;
 
-  if (valid_addr(ptr)) { // Verifica si la dirección es válida
-    b = get_block(ptr);  // Obtiene el bloque de memoria asociado a 'ptr'
-    b->free = 1;         // Marca el bloque como libre
+  if (valid_addr(ptr)) {
+    b = get_block(ptr);
 
-    // Intentar fusionar con el siguiente bloque si está libre
-    if (b->next && b->next->free) {
-      b = fusion(b); // Fusiona con el siguiente bloque si está libre
+    if (b->free) { // Evitar liberar bloques ya liberados
+      fprintf(stderr, "Error: Attempt to free an already freed block.\n");
+      pthread_mutex_unlock(&allocator_lock);
+      return;
     }
 
-    // Intentar fusionar con el bloque previo si está libre
-    if (b->prev && b->prev->free) {
-      b = fusion(b->prev); // Fusiona con el bloque anterior si está libre
-    }
+    b->free = 1; // Marcar como libre
+    // Intentar fusionar con el siguiente bloque
+    b = fusion(b);
+    // Si munmap está habilitado y el bloque es el último
+    if (activate_mumap && b->next == NULL) {
+      if (b->prev) {
+        b->prev->next = NULL;
+      } else {
+        base = NULL;
+      }
+      if (b->is_mapped && b->free) {
+        size_t total_size = b->size + BLOCK_SIZE;
 
-    // Actualizar los punteros de la lista de bloques
-    if (b->prev) {
-      b->prev->next = b; // Actualiza el puntero 'next' del bloque previo
-    } else {
-      base = b; // Si es el primer bloque, actualiza la base
-    }
-
-    if (b->next) {
-      b->next->prev = b; // Actualiza el puntero 'prev' del bloque siguiente
+        if (munmap(b, total_size) == -1) {
+          fprintf(stderr, "\033[1;31mError: munmap failed\033[0m\n");
+          fprintf(stderr,
+                  "\033[1;31mInvalid arguments: b = %p, size = %zu\033[0m\n",
+                  (void *)b, total_size);
+        } else {
+          if (b == base) {
+            base = NULL; // Solo actualizar si munmap es exitoso y b es el
+                         // primer bloque
+          }
+        }
+      }
     }
   }
+  pthread_mutex_unlock(&allocator_lock);
 }
 
 void *my_calloc(size_t number, size_t size) {
+  pthread_mutex_lock(&allocator_lock);
   size_t *new;
   size_t s4, i;
 
   if (!number || !size) {
+    pthread_mutex_unlock(&allocator_lock);
     return (NULL);
   }
   new = my_malloc(number * size);
@@ -245,18 +325,20 @@ void *my_calloc(size_t number, size_t size) {
     for (i = 0; i < s4; i++)
       new[i] = 0;
   }
-
+  pthread_mutex_unlock(&allocator_lock);
   return (new);
 }
 
 void *my_realloc(void *ptr, size_t size) {
+  pthread_mutex_lock(&allocator_lock);
   size_t s;
   t_block b, new;
   void *newp;
 
-  if (!ptr)
-    ("realloc", ptr, size);
-  return (my_malloc(size));
+  if (!ptr) {
+    pthread_mutex_unlock(&allocator_lock);
+    return my_malloc(size);
+  }
 
   if (valid_addr(ptr)) {
     s = align(size);
@@ -273,109 +355,101 @@ void *my_realloc(void *ptr, size_t size) {
           split_block(b, s);
       } else {
         newp = my_malloc(s);
-        if (!newp)
-          return (NULL);
+        if (!newp) {
+          pthread_mutex_unlock(&allocator_lock);
+          return NULL;
+        }
         new = get_block(newp);
-        copy_block(b, new);
-        my_free(ptr);
-        ("realloc", new, size);
-        return (newp);
+        if (new->size >= b->size) {
+          copy_block(b, new);
+          my_free(ptr, 0);
+          new->is_mapped = b->is_mapped; // Copy the is_mapped status
+          pthread_mutex_unlock(&allocator_lock);
+          return newp;
+        } else {
+          pthread_mutex_unlock(&allocator_lock);
+          return NULL;
+        }
       }
     }
-    ("realloc", ptr, size);
-    return (ptr);
+    pthread_mutex_unlock(&allocator_lock);
+    return ptr;
   }
   printf("No valid address\n");
-  return (NULL);
+  pthread_mutex_unlock(&allocator_lock);
+  return NULL;
 }
 
-void check_heap(void *data) {
-  if (data == NULL) {
-    printf("Data is NULL\n");
-    return;
-  }
-
-  t_block block = get_block(data);
-
-  if (block == NULL) {
-    printf("Block is NULL\n");
-    return;
-  }
-
+void check_heap(void) {
   printf("\033[1;33mHeap check\033[0m\n");
-  printf("Size: %zu\n", block->size);
 
-  // Verificar consistencia de los punteros
-  if (block->next != NULL) {
-    printf("Next block: %p\n", (void *)(block->next));
-    if (block->next->prev != block) {
-      printf("\033[1;31mError: Inconsistent next->prev pointer!\033[0m\n");
+  t_block current = base;
+  while (current != NULL) {
+    printf("Block at %p\n", (void *)current);
+    printf("  Size: %zu\n", current->size);
+    printf("  Free: %d\n", current->free);
+
+    if (current->next != NULL) {
+      printf("  Next block: %p\n", (void *)(current->next));
+      if (current->next->prev != current) {
+        printf("\033[1;31m  Error: Inconsistent next->prev pointer!\033[0m\n");
+      }
+    } else {
+      printf("  Next block: NULL\n");
     }
-  } else {
-    printf("Next block: NULL\n");
-  }
 
-  if (block->prev != NULL) {
-    printf("Prev block: %p\n", (void *)(block->prev));
-    if (block->prev->next != block) {
-      printf("\033[1;31mError: Inconsistent prev->next pointer!\033[0m\n");
+    if (current->prev != NULL) {
+      printf("  Prev block: %p\n", (void *)(current->prev));
+      if (current->prev->next != current) {
+        printf("\033[1;31m  Error: Inconsistent prev->next pointer!\033[0m\n");
+      }
+    } else {
+      printf("  Prev block: NULL\n");
     }
-  } else {
-    printf("Prev block: NULL\n");
-  }
 
-  printf("Free: %d\n", block->free);
-
-  // Verificar dirección y tamaño de los datos
-  if (block->ptr != NULL) {
-    printf("Beginning data address: %p\n", block->ptr);
-    printf("Last data address: %p\n",
-           (void *)((char *)(block->ptr) + block->size));
-    if (block->size == 0 ||
-        block->size > 1e6) { // Ajusta el límite máximo según sea necesario
-      printf("\033[1;31mError: Invalid block size (%zu)!\033[0m\n",
-             block->size);
+    if (current->ptr != NULL) {
+      printf("  Beginning data address: %p\n", current->ptr);
+      printf("  Last data address: %p\n",
+             (void *)((char *)(current->ptr) + current->size));
+      if (current->size == 0 || current->size > 1e6) {
+        printf("\033[1;31m  Error: Invalid block size (%zu)!\033[0m\n",
+               current->size);
+      }
+    } else {
+      printf("  Data address: NULL\n");
     }
-  } else {
-    printf("Data address: NULL\n");
-  }
 
-  // Verificar bloques libres adyacentes no fusionados
-  if (block->free && block->next && block->next->free) {
-    printf("\033[1;31mWarning: Adjacent free blocks not fused!\033[0m\n");
-  }
+    if (current->free && current->next && current->next->free) {
+      printf("\033[1;31m  Warning: Adjacent free blocks not fused!\033[0m\n");
+    }
 
-  // Verificar si el bloque está dentro del rango del heap
-  void *heap_start = sbrk(0); // Obtener el inicio del heap
-  if ((void *)block < heap_start) {
-    printf("\033[1;31mError: Block pointer is out of heap range!\033[0m\n");
+    void *heap_start = sbrk(0);
+    if ((void *)current < heap_start) {
+      printf("\033[1;31m  Error: Block pointer is out of heap range!\033[0m\n");
+    }
+
+    current = current->next;
   }
 
   printf("Heap address: %p\n", sbrk(0));
 }
 
-memory_stats memory_usage(int active_print) {
+MemoryUsage memory_usage(int active_print) {
   t_block current = base;
-  size_t total_assigned = 0;
-  size_t total_free = 0;
-  size_t internal_fragmentation = 0;
+  size_t assigned_memory = 0;
+  size_t freed_memory = 0;
+  size_t internal_fragmentation = count_internal_fragmentation;
+  count_internal_fragmentation = 0;
   size_t external_fragmentation = 0;
 
   while (current != NULL) {
     if (current->free) {
-      total_free += current->size;
-
-      // Considerar como fragmentación externa solo bloques inutilizables
-      if (current->size < BLOCK_SIZE) {
-        external_fragmentation += current->size;
-      }
+      freed_memory += current->size;
     } else {
-      total_assigned += current->size;
-
-      // Fragmentación interna: diferencia entre tamaño real y útil
-      if (current->size % BLOCK_SIZE != 0) {
-        internal_fragmentation += BLOCK_SIZE - (current->size % BLOCK_SIZE);
-      }
+      assigned_memory += current->size;
+    }
+    if (current->size < BLOCK_SIZE) {
+      external_fragmentation += current->size;
     }
     current = current->next;
   }
@@ -385,15 +459,15 @@ memory_stats memory_usage(int active_print) {
   // Imprimir los resultados
   if (active_print) {
     printf("\033[1;33mMemory usage\033[0m\n");
-    printf("Total memory assigned: %zu bytes\n", total_assigned);
-    printf("Total free memory: %zu bytes\n", total_free);
+    printf("Total memory assigned: %zu bytes\n", assigned_memory);
+    printf("Total free memory: %zu bytes\n", freed_memory);
     printf("Internal fragmentation: %zu bytes\n", internal_fragmentation);
     printf("External fragmentation: %zu bytes\n", external_fragmentation);
     printf("Total fragmentation: %zu bytes\n", total_fragmentation);
   }
   // Devolver estadísticas en una estructura
-  return (memory_stats){total_assigned, total_free, internal_fragmentation,
-                        external_fragmentation, total_fragmentation};
+  return (MemoryUsage){assigned_memory, freed_memory, internal_fragmentation,
+                       external_fragmentation, total_fragmentation};
 }
 
 void *call_malloc(size_t size) {
@@ -410,8 +484,8 @@ void *call_calloc(size_t num, size_t size) {
   return ptr;
 }
 
-void call_free(void *ptr) {
-  my_free(ptr);
+void call_free(void *ptr, int activate_mumap) {
+  my_free(ptr, activate_mumap);
   log_memory_operation("free", ptr,
                        0); // El tamaño no es necesario para free
 }
@@ -429,3 +503,13 @@ void close_log_file() {
     fclose(log_file);
   }
 }
+
+void memory_manager_init() {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&allocator_lock, &attr);
+  pthread_mutexattr_destroy(&attr);
+}
+
+void memory_manager_cleanup() { pthread_mutex_destroy(&allocator_lock); }
