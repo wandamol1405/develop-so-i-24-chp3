@@ -13,7 +13,10 @@ typedef struct MemoryUsage MemoryUsage;
 void *base = NULL;
 int method = 0;
 FILE *log_file = NULL;
+size_t count_total_allocated = 0;
+size_t count_total_freed = 0;
 size_t count_internal_fragmentation = 0;
+size_t count_external_fragmentation = 0;
 pthread_mutex_t allocator_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void open_log_file() {
@@ -50,36 +53,33 @@ void log_memory_operation(const char *operation, void *ptr, size_t size) {
 
 t_block find_block(t_block *last, size_t size) {
   t_block b = base;
+  t_block selected = NULL;
 
-  // Validación de método
+  // Validación del método
   if (method != FIRST_FIT && method != BEST_FIT && method != WORST_FIT) {
     fprintf(stderr, "Error: Invalid method value %d\n", method);
     return NULL;
   }
 
-  t_block selected = NULL;
-
-  // FIRST_FIT: detenerse en el primer bloque válido
+  // Selección del método
   if (method == FIRST_FIT) {
+    // FIRST_FIT: detenerse en el primer bloque válido
     while (b) {
       if (b->free && b->size >= size) {
-        count_internal_fragmentation = b->size - size;
+        count_internal_fragmentation += b->size - size;
         return b; // Devuelve el primer bloque encontrado
       }
       *last = b;
       b = b->next;
     }
-  }
-
-  // BEST_FIT: encontrar el bloque con el tamaño más cercano
-  else if (method == BEST_FIT) {
+  } else if (method == BEST_FIT) {
+    // BEST_FIT: encontrar el bloque con el tamaño más cercano
     size_t min_diff = (size_t)-1;
     while (b) {
       if (b->free && b->size >= size) {
         size_t diff = b->size - size;
         if (diff < min_diff) {
           min_diff = diff;
-          count_internal_fragmentation = min_diff;
           selected = b;
           if (diff == 0)
             break; // Si el ajuste es perfecto, detener
@@ -88,23 +88,27 @@ t_block find_block(t_block *last, size_t size) {
       *last = b;
       b = b->next;
     }
-  }
-
-  // WORST_FIT: encontrar el bloque más grande que cumpla
-  else if (method == WORST_FIT) {
+    if (selected) {
+      count_internal_fragmentation += selected->size - size;
+    }
+  } else if (method == WORST_FIT) {
+    // WORST_FIT: encontrar el bloque más grande que cumpla
     size_t max_size = 0;
     while (b) {
       if (b->free && b->size >= size) {
         if (b->size > max_size) {
           max_size = b->size;
-          count_internal_fragmentation = max_size - size;
           selected = b;
         }
       }
       *last = b;
       b = b->next;
     }
+    if (selected) {
+      count_internal_fragmentation += selected->size - size;
+    }
   }
+
   return selected;
 }
 
@@ -258,7 +262,7 @@ void *my_malloc(size_t size) {
     base = b;
   }
   pthread_mutex_unlock(&allocator_lock);
-
+  count_total_allocated += b->size;
   return (b->data);
 }
 
@@ -283,6 +287,7 @@ void my_free(void *ptr, int activate_mumap) {
     b->free = 1; // Marcar como libre
     // Intentar fusionar con el siguiente bloque
     b = fusion(b);
+    count_total_freed += b->size;
     // Si munmap está habilitado y el bloque es el último
     if (activate_mumap && b->next == NULL) {
       if (b->prev) {
@@ -436,18 +441,13 @@ void check_heap(void) {
 
 MemoryUsage memory_usage(int active_print) {
   t_block current = base;
-  size_t assigned_memory = 0;
-  size_t freed_memory = 0;
+  size_t assigned_memory = count_total_allocated;
+  size_t freed_memory = count_total_freed;
   size_t internal_fragmentation = count_internal_fragmentation;
   count_internal_fragmentation = 0;
   size_t external_fragmentation = 0;
 
   while (current != NULL) {
-    if (current->free) {
-      freed_memory += current->size;
-    } else {
-      assigned_memory += current->size;
-    }
     if (current->size < BLOCK_SIZE) {
       external_fragmentation += current->size;
     }
