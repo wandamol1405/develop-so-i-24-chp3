@@ -34,6 +34,12 @@
 #define DATA_START 1
 /** Nombre del archivo de log. */
 #define FILENAME_LOG "memory.log"
+/** Tamaño máximo de una cadena de tiempo. */
+#define TIME_STR_SIZE 20
+/** Dirección de memoria inválida. */
+#define INVALID_ADDR 0
+/** Tamaño mínimo de datos en un bloque. */
+#define MIN_BLOCK_DATA_SIZE 4
 
 /**
  * @struct s_block

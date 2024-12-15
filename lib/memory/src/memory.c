@@ -10,14 +10,15 @@
 
 typedef struct s_block *t_block;
 typedef struct MemoryUsage MemoryUsage;
-void *base = NULL;
-int method = 0;
-FILE *log_file = NULL;
-size_t count_total_allocated = 0;
-size_t count_total_freed = 0;
-size_t count_internal_fragmentation = 0;
-size_t count_external_fragmentation = 0;
-pthread_mutex_t allocator_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void *base = NULL;                       // Puntero al primer bloque
+int method = FIRST_FIT;                  // Método de asignación de memoria
+FILE *log_file = NULL;                   // Archivo de log
+size_t count_total_allocated = 0;        // Contador de memoria asignada
+size_t count_total_freed = 0;            // Contador de memoria liberada
+size_t count_internal_fragmentation = 0; // Contador de fragmentación interna
+pthread_mutex_t allocator_lock =
+    PTHREAD_MUTEX_INITIALIZER; // Mutex para el allocator
 
 void open_log_file() {
   log_file = fopen(FILENAME_LOG, "w");
@@ -43,7 +44,7 @@ void log_memory_operation(const char *operation, void *ptr, size_t size) {
 
   time_t now = time(NULL);
   struct tm *time_info = localtime(&now);
-  char time_str[20];
+  char time_str[TIME_STR_SIZE]; // Formato: "YYYY-MM-DD HH:MM:SS"
   strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", time_info);
 
   fprintf(log_file, "[%s] Operation: %s, Address: %p, Size: %zu bytes\n",
@@ -152,7 +153,7 @@ t_block get_block(void *p) {
 
 int valid_addr(void *p) {
   if (p == NULL || base == NULL) {
-    return 0;
+    return INVALID_ADDR;
   }
   t_block b = get_block(p);
   t_block current = base;
@@ -162,7 +163,7 @@ int valid_addr(void *p) {
     }
     current = current->next;
   }
-  return 0;
+  return INVALID_ADDR;
 }
 
 t_block fusion(t_block b) {
@@ -221,12 +222,12 @@ int get_method() { return method; }
 void set_method(int m) { method = m; }
 
 void malloc_control(int m) {
-  if (m == 0) {
-    set_method(0);
-  } else if (m == 1) {
-    set_method(1);
-  } else if (m == 2) {
-    set_method(2);
+  if (m == FIRST_FIT) {
+    set_method(FIRST_FIT);
+  } else if (m == BEST_FIT) {
+    set_method(BEST_FIT);
+  } else if (m == WORST_FIT) {
+    set_method(WORST_FIT);
   } else {
     fprintf(stderr, "Error: Invalid method value %d\n", m);
   }
@@ -242,7 +243,7 @@ void *my_malloc(size_t size) {
     last = base;
     b = find_block(&last, s);
     if (b) {
-      if ((b->size - s) >= (BLOCK_SIZE + 4)) {
+      if ((b->size - s) >= (BLOCK_SIZE + MIN_BLOCK_DATA_SIZE)) {
         split_block(b, s);
       }
       b->free = 0;
@@ -350,13 +351,13 @@ void *my_realloc(void *ptr, size_t size) {
     b = get_block(ptr);
 
     if (b->size >= s) {
-      if (b->size - s >= (BLOCK_SIZE + 4))
+      if (b->size - s >= (BLOCK_SIZE + MIN_BLOCK_DATA_SIZE))
         split_block(b, s);
     } else {
       if (b->next && b->next->free &&
           (b->size + BLOCK_SIZE + b->next->size) >= s) {
         fusion(b);
-        if (b->size - s >= (BLOCK_SIZE + 4))
+        if (b->size - s >= (BLOCK_SIZE + MIN_BLOCK_DATA_SIZE))
           split_block(b, s);
       } else {
         newp = my_malloc(s);
@@ -442,13 +443,15 @@ void check_heap(void) {
 MemoryUsage memory_usage(int active_print) {
   t_block current = base;
   size_t assigned_memory = count_total_allocated;
+  count_total_allocated = 0;
   size_t freed_memory = count_total_freed;
+  count_total_freed = 0;
   size_t internal_fragmentation = count_internal_fragmentation;
   count_internal_fragmentation = 0;
   size_t external_fragmentation = 0;
 
   while (current != NULL) {
-    if (current->size < BLOCK_SIZE) {
+    if (current->size < (BLOCK_SIZE + MIN_BLOCK_DATA_SIZE)) {
       external_fragmentation += current->size;
     }
     current = current->next;
@@ -505,11 +508,13 @@ void close_log_file() {
 }
 
 void memory_manager_init() {
-  pthread_mutexattr_t attr;
-  pthread_mutexattr_init(&attr);
-  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  pthread_mutex_init(&allocator_lock, &attr);
-  pthread_mutexattr_destroy(&attr);
+  pthread_mutexattr_t attr;      // Atributos del mutex
+  pthread_mutexattr_init(&attr); // Inicializar los atributos
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE); // Tipo recursivo
+  pthread_mutex_init(&allocator_lock, &attr); // Inicializar el mutex
+  pthread_mutexattr_destroy(&attr);           // Destruir los atributos
 }
 
-void memory_manager_cleanup() { pthread_mutex_destroy(&allocator_lock); }
+void memory_manager_cleanup() {
+  pthread_mutex_destroy(&allocator_lock);
+} // Destruir el mutex
