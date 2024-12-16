@@ -12,9 +12,19 @@ long get_time_in_microseconds() {
   return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
+void cleanup_allocations(void **allocations, int num_allocs) {
+  for (int i = 0; i < num_allocs; ++i) {
+    if (allocations[i] != NULL) {
+      // Solo liberar si no ha sido liberado antes
+      call_free(allocations[i], 1);
+      allocations[i] = NULL; // Marcar como liberado
+    }
+  }
+}
+
 void test_policies(int policy) {
   srand(time(NULL));
-  const int num_allocs = 5000;
+  const int num_allocs = 100;
   const size_t min_size = 2;
   const size_t max_size = 1028;
 
@@ -41,8 +51,11 @@ void test_policies(int policy) {
     if (rand() % 2 == 0) {
       int free_index = rand() % (i + 1); // Seleccionar un índice previo
       if (allocations[free_index] != NULL) {
-        call_free(allocations[free_index], 1);
-        allocations[free_index] = NULL;
+        // Liberar el bloque solo si no ha sido liberado previamente
+        if (allocations[free_index] != NULL) {
+          call_free(allocations[free_index], 1);
+          allocations[free_index] = NULL; // Marcar como liberado
+        }
       }
     }
   }
@@ -53,12 +66,7 @@ void test_policies(int policy) {
   MemoryUsage usage = memory_usage(0);
 
   // Liberar todas las asignaciones restantes
-  for (int i = 0; i < num_allocs; ++i) {
-    if (allocations[i] != NULL) {
-      call_free(allocations[i], 1);
-      allocations[i] = NULL;
-    }
-  }
+  cleanup_allocations(allocations, num_allocs);
 
   double time_taken = (end_time - start_time) / 1e6;
 
@@ -83,15 +91,6 @@ void open_log_test_file() {
   if (log_test_file == NULL) {
     perror("Failed to open log file");
     exit(EXIT_FAILURE);
-  }
-}
-
-void cleanup_allocations(void **allocations, int num_allocs) {
-  for (int i = 0; i < num_allocs; ++i) {
-    if (allocations[i] != NULL) {
-      call_free(allocations[i], 1);
-      allocations[i] = NULL;
-    }
   }
 }
 

@@ -65,8 +65,13 @@ t_block find_block(t_block *last, size_t size) {
   // Selección del método
   if (method == FIRST_FIT) {
     // FIRST_FIT: detenerse en el primer bloque válido
+    printf("Finding block with size %zu\n", size);
     while (b) {
+      //  printf("Block found at %p with %zu an its free %i\n", (void *)b,
+      //  b->size, b->free);
       if (b->free && b->size >= size) {
+
+        // if (b->size - size != 0)
         count_internal_fragmentation += b->size - size;
         return b; // Devuelve el primer bloque encontrado
       }
@@ -119,11 +124,17 @@ void split_block(t_block b, size_t s) {
   }
   t_block new;
   new = (t_block)(b->data + s);
+  printf("New block at %p\n", (void *)new);
+  printf("New block size: %zu\n", b->size - s - BLOCK_SIZE);
   new->size = b->size - s - BLOCK_SIZE;
+  printf("New block next: %p\n", (void *)b->next);
   new->next = b->next;
+  printf("New block prev: %p\n", (void *)b);
   new->prev = b;
   new->free = 1;
+  printf("New block data: %p\n", (void *)new->data);
   new->ptr = new->data;
+  printf("New block ptr: %p\n", new->ptr);
   new->is_mapped = 0;
   b->size = s;
   b->next = new;
@@ -155,10 +166,20 @@ int valid_addr(void *p) {
   if (p == NULL || base == NULL) {
     return INVALID_ADDR;
   }
+
+  printf("Validating address %p\n", p);
   t_block b = get_block(p);
+  printf("Block %p\n", (void *)b);
+  if (b == NULL) {
+    return INVALID_ADDR;
+  }
+  printf("Validating address block %p\n", b);
+  printf("Block size: %zu\n", b->size);
+  printf("Block ptr: %p\n", b->ptr);
   t_block current = base;
   while (current) {
     if (current == b) {
+      printf("Block found at %p\n", (void *)current->ptr);
       return (current->ptr == p);
     }
     current = current->next;
@@ -168,32 +189,60 @@ int valid_addr(void *p) {
 
 t_block fusion(t_block b) {
   // Fusión con los bloques siguientes
+  printf("Fusion block at %p\n", (void *)b);
+
+  // Fusión con bloques posteriores (siguientes)
   while (b->next && b->next->free) {
     t_block next_block = b->next;
+    printf("Next block at %p with size %zu\n", (void *)next_block,
+           next_block->size);
+    // Acumular el tamaño del bloque actual con el siguiente
     b->size += BLOCK_SIZE + next_block->size;
+    printf("New size: %zu\n", b->size);
+    // Actualizar el puntero al siguiente bloque
     b->next = next_block->next;
-    if (b->next)
-      b->next->prev = b;
+    if (b->next) {
+      b->next->prev =
+          b; // Ajustar el bloque siguiente para que apunte al bloque fusionado
+    }
+
     // Revisar si el bloque fusionado sigue en el espacio mapeado
     if (!next_block->is_mapped) {
+      // Si el bloque siguiente no estaba mapeado, marcamos el bloque fusionado
+      // como no mapeado
       b->is_mapped = 0;
     }
   }
 
-  // Fusión con los bloques previos
+  // Fusión con bloques previos (anteriores)
   while (b->prev && b->prev->free) {
     t_block prev_block = b->prev;
+    printf("Prev block at %p with size %zu\n", (void *)prev_block,
+           prev_block->size);
+
+    // Acumular el tamaño del bloque anterior con el bloque actual
     prev_block->size += BLOCK_SIZE + b->size;
+
+    // Actualizar el puntero al siguiente bloque
     prev_block->next = b->next;
-    if (b->next)
-      b->next->prev = prev_block;
+    if (b->next) {
+      b->next->prev = prev_block; // Ajustar el bloque siguiente para que apunte
+                                  // al bloque fusionado
+    }
+
     // Revisar si el bloque fusionado sigue en el espacio mapeado
     if (!b->is_mapped) {
+      // Si el bloque actual no estaba mapeado, marcamos el bloque previo como
+      // no mapeado
       prev_block->is_mapped = 0;
     }
+
+    // El bloque actual ha sido fusionado con el anterior, por lo que ahora b se
+    // convierte en prev_block
     b = prev_block;
   }
-  return b;
+
+  return b; // Retornar el bloque resultante después de la fusión
 }
 
 t_block extend_heap(t_block last, size_t s) {
@@ -239,11 +288,17 @@ void *my_malloc(size_t size) {
   size_t s;
   s = align(size);
 
+  printf("Allocating %zu bytes\n", s);
+  printf("Method: %d\n", method);
+  printf("Base: %p\n", (void *)base);
+
   if (base) {
     last = base;
+    printf("Finding block\n");
     b = find_block(&last, s);
     if (b) {
       if ((b->size - s) >= (BLOCK_SIZE + MIN_BLOCK_DATA_SIZE)) {
+        printf("Splitting block\n");
         split_block(b, s);
       }
       b->free = 0;
@@ -262,8 +317,8 @@ void *my_malloc(size_t size) {
     }
     base = b;
   }
-  pthread_mutex_unlock(&allocator_lock);
   count_total_allocated += b->size;
+  pthread_mutex_unlock(&allocator_lock);
   return (b->data);
 }
 
@@ -273,10 +328,11 @@ void my_free(void *ptr, int activate_mumap) {
     pthread_mutex_unlock(&allocator_lock);
     return; // No hay nada que liberar
   }
-
+  printf("Freeing block at %p\n", ptr);
   t_block b;
 
   if (valid_addr(ptr)) {
+    printf("Valid address\n");
     b = get_block(ptr);
 
     if (b->free) { // Evitar liberar bloques ya liberados
@@ -288,6 +344,7 @@ void my_free(void *ptr, int activate_mumap) {
     b->free = 1; // Marcar como libre
     // Intentar fusionar con el siguiente bloque
     b = fusion(b);
+    printf("fusioned block at %p\n", (void *)b);
     count_total_freed += b->size;
     // Si munmap está habilitado y el bloque es el último
     if (activate_mumap && b->next == NULL) {
